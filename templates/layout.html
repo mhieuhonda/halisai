@@ -1,13 +1,25 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="{{ ctx.lang }}" data-theme="{{ ctx.theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#f8f8f8">
   <title>{% block title %}HalisAI{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+  <link rel="preload" href="/static/fonts/Inter-Variable.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
   <meta name="csrf-token" content="{{ ctx.csrf }}">
+  <script>
+    // Chủ đề được áp trước khi CSS kịp render, ưu tiên lựa chọn đã lưu trên máy
+    (function () {
+      try {
+        var t = localStorage.getItem("halis_theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.dataset.theme = t;
+        }
+      } catch (e) { /* bỏ qua */ }
+    })();
+  </script>
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine.min.js" defer></script>
   <script src="/static/vendor/marked.min.js" defer></script>
@@ -16,18 +28,23 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-<div class="app" x-data="{ drawer: false }">
-  <div class="backdrop" x-show="drawer" x-transition.opacity.duration.150ms @click="drawer = false" x-cloak></div>
+<div class="app" x-data="{ drawer: false }" @keydown.escape.window="drawer = false">
+  <div class="backdrop" x-show="drawer" x-transition.opacity.duration.200ms @click="drawer = false" x-cloak></div>
 
-  <aside class="sidebar" :class="drawer ? 'open' : ''">
+  <aside class="sidebar" :class="drawer ? 'open' : ''" id="sidebar">
     <div class="sidebar-top">
       <div class="brand">
-        <a class="brand-logo" href="/">▊</a>
-        <a class="brand-name" href="/">Halis<b>AI</b></a>
+        <a class="brand-logo" href="/" aria-label="HalisAI">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h9l7 7-7 7H4z"/><path d="M9 9l6 6"/></svg>
+        </a>
+        <a class="brand-name" href="/">Halis<span class="brand-accent">AI</span></a>
+        <button class="icon-btn drawer-close" @click="drawer = false" aria-label="{{ ctx.t.close_menu }}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
       </div>
       <a class="btn-newchat" href="/" id="new-chat-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span>Cuộc trò chuyện mới</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>{{ ctx.t.new_chat }}</span>
       </a>
     </div>
 
@@ -35,17 +52,20 @@
          hx-get="/partials/conversations{% if let Some(a) = active %}?active={{ a.id }}{% endif %}"
          hx-trigger="load, refresh-conversations from:body"
          hx-swap="innerHTML">
-      <div class="conv-skeleton"><span></span><span></span></div>
+      <div class="conv-skeleton"><span></span><span></span><span></span></div>
     </nav>
 
     <div class="sidebar-footer">
       {% if ctx.is_staff %}
-      <a class="admin-link" href="/admin">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span>Bảng quản trị</span>
-        <span class="admin-badge">{{ ctx.user_role }}</span>
+      <a class="sb-action" href="/admin">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span>{{ ctx.t.admin_panel }}</span>
       </a>
       {% endif %}
+      <a class="sb-action" href="/settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>{{ ctx.t.settings }}</span>
+      </a>
       <div class="user-card">
         {% if let Some(pic) = ctx.user_picture %}
         <img class="avatar" src="{{ pic }}" alt="" referrerpolicy="no-referrer">
@@ -54,9 +74,9 @@
         {% endif %}
         <div class="user-meta">
           <span class="user-name">{{ ctx.user_name }}</span>
-          <span class="user-role role-{{ ctx.user_role }}">{{ ctx.user_role }}</span>
+          <span class="user-mail">{{ ctx.user_email }}</span>
         </div>
-        <button class="icon-btn logout-btn" hx-post="/auth/logout" hx-swap="none" title="Đăng xuất" aria-label="Đăng xuất">
+        <button class="icon-btn logout-btn" hx-post="/auth/logout" hx-swap="none" title="{{ ctx.t.logout }}" aria-label="{{ ctx.t.logout }}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
       </div>

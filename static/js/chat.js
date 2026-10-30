@@ -2,9 +2,20 @@
 (function () {
   "use strict";
 
-  var composer, input, sendBtn, stopBtn, messagesEl, titleEl, regenBtn, renameBtn;
+  var composer, input, sendBtn, stopBtn, messagesEl, titleEl, regenBtn, renameBtn, delBtn, scrollBtn;
   var controller = null;
   var sending = false;
+
+  var T = window.I18N || {
+    stopped: "Đã dừng tạo câu trả lời.",
+    errGeneric: "Halis tạm thời không phản hồi. Vui lòng thử lại sau ít phút.",
+    truncated: "Câu trả lời này đã bị ngắt vì đạt giới hạn đầu ra.",
+    cannotCreate: "Không tạo được cuộc trò chuyện. Thử lại nhé.",
+    cannotRename: "Không đổi được tên."
+  };
+  var MORE = (document.documentElement.lang === "en"
+    ? { thinking: "Thinking", thought: "Thought for", running: "running…", stopped: "Stopped generating.", you: "You", justNow: "just now" }
+    : { thinking: "Đang suy nghĩ", thought: "Đã suy nghĩ", running: "đang chạy…", stopped: "Đã dừng tạo câu trả lời.", you: "Bạn", justNow: "vừa xong" });
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -17,10 +28,13 @@
     titleEl = document.getElementById("conv-title");
     regenBtn = document.getElementById("regen-btn");
     renameBtn = document.getElementById("rename-btn");
+    delBtn = document.getElementById("del-btn");
+    scrollBtn = document.getElementById("scroll-bottom");
 
     if (!composer) return;
 
     scrollToBottom(true);
+    updateSendState();
 
     composer.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -33,22 +47,40 @@
         send();
       }
     });
-    input.addEventListener("input", autoresize);
+    input.addEventListener("input", function () {
+      autoresize();
+      updateSendState();
+    });
     stopBtn.addEventListener("click", stop);
     if (regenBtn) regenBtn.addEventListener("click", regenerate);
     if (renameBtn) renameBtn.addEventListener("click", rename);
+    if (delBtn) delBtn.addEventListener("click", function () {
+      // Sau khi xóa, về trang chủ
+      setTimeout(function () { window.location.href = "/"; }, 350);
+    });
 
     Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (chip) {
       chip.addEventListener("click", function () {
         input.value = chip.getAttribute("data-fill") || "";
         input.focus();
         autoresize();
+        updateSendState();
       });
     });
 
-    // Xoa empty-state khi nguoi dung bat dau go
     input.addEventListener("focus", removeEmptyOnce);
+    if (scrollBtn) {
+      scrollBtn.addEventListener("click", function () { scrollToBottom(true); });
+      messagesEl.addEventListener("scroll", function () {
+        scrollBtn.classList.toggle("hidden", nearBottom());
+      });
+    }
     autoresize();
+  }
+
+  function updateSendState() {
+    if (!sendBtn) return;
+    sendBtn.classList.toggle("idle", !input.value.trim());
   }
 
   function removeEmptyOnce() {
@@ -77,7 +109,7 @@
 
   function nearBottom() {
     if (!messagesEl) return true;
-    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140;
+    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 160;
   }
 
   function maybeScroll() {
@@ -107,11 +139,13 @@
     var el = document.createElement("article");
     el.className = "msg msg-user";
     el.innerHTML =
-      '<div class="msg-label"><span class="msg-author author-user">Bạn</span><span class="msg-time">vừa xong</span></div>' +
-      '<div class="msg-body"></div>';
+      '<div class="msg-meta"><span class="msg-author author-user">' + MORE.you + "</span>" +
+      '<span class="msg-time">' + MORE.justNow + "</span></div>" +
+      '<div class="msg-block"><div class="msg-body msg-user-body"></div></div>';
     el.querySelector(".msg-body").textContent = content;
     messagesEl.appendChild(el);
     scrollToBottom(true);
+    return el;
   }
 
   function appendAssistantMsg() {
@@ -119,8 +153,11 @@
     var el = document.createElement("article");
     el.className = "msg msg-assistant";
     el.innerHTML =
-      '<div class="msg-label"><span class="msg-author author-ai">Halis</span><span class="msg-time">vừa xong</span></div>' +
-      '<div class="ai-status"><span class="cursor">▊</span><span class="dots">Halis đang suy nghĩ</span></div>' +
+      '<div class="msg-meta"><span class="msg-avatar" aria-hidden="true">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h9l7 7-7 7H4z"/><path d="M9 9l6 6"/></svg>' +
+      "</span>" +
+      '<span class="msg-author author-ai">Halis</span><span class="msg-time">' + MORE.justNow + "</span></div>" +
+      '<div class="ai-status"><span class="cursor"></span><span class="dots">' + MORE.thinking + "</span></div>" +
       '<div class="msg-body"></div>';
     messagesEl.appendChild(el);
     scrollToBottom(true);
@@ -133,8 +170,8 @@
     details.open = true;
     details.innerHTML =
       '<summary><span class="think-toggle" aria-hidden="true">' +
-      '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>' +
-      '</span><span class="think-label">Đang suy nghĩ</span></summary>' +
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>' +
+      "</span><span class=\"think-label\">" + MORE.thinking + "</span></summary>" +
       '<div class="think-body"></div>';
     var bodyEl = ai.querySelector(".msg-body");
     bodyEl.parentNode.insertBefore(details, bodyEl);
@@ -165,7 +202,7 @@
         '<span class="tool-icon" aria-hidden="true">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>' +
         "</span>" +
-        '<span class="tool-name"></span><span class="tool-summary">đang chạy…</span><span class="tool-ms"></span>';
+        '<span class="tool-name"></span><span class="tool-summary">' + MORE.running + "</span><span class=\"tool-ms\"></span>";
       line.querySelector(".tool-name").textContent = data.name;
       box.appendChild(line);
     } else {
@@ -216,7 +253,8 @@
     setStreaming(true);
     input.value = "";
     autoresize();
-    appendUserMsg(content);
+    updateSendState();
+    var userEl = appendUserMsg(content);
 
     if (!id) {
       try {
@@ -235,27 +273,31 @@
         }
         triggerConvRefresh();
       } catch (e) {
+        userEl.remove();
+        input.value = content;
+        autoresize();
+        updateSendState();
         setStreaming(false);
-        window.toast && toast("Không tạo được cuộc trò chuyện. Thử lại nhé.", "error");
+        window.toast && toast(T.cannotCreate || "Không tạo được cuộc trò chuyện. Thử lại nhé.", "error");
         return;
       }
     }
 
-    await stream("/api/chat", { conversation_id: id, content: content });
+    await stream("/api/chat", { conversation_id: id, content: content }, { userEl: userEl, content: content });
   }
 
   async function regenerate() {
     if (sending) return;
     var id = convId();
     if (!id) return;
-    // Xoa cac phan tu assistant cuoi tren man hinh
+    // Xoa phan tu assistant cuoi tren man hinh
     var msgs = messagesEl.querySelectorAll(".msg-assistant");
     for (var i = msgs.length - 1; i >= 0; i--) {
       msgs[i].remove();
       break; // chi xoa phan tu cuoi cung
     }
     setStreaming(true);
-    await stream("/api/chat/regenerate", { conversation_id: id });
+    await stream("/api/chat/regenerate", { conversation_id: id }, {});
   }
 
   function stop() {
@@ -268,16 +310,14 @@
     }
   }
 
-  async function stream(url, body) {
+  async function stream(url, body, ctxInfo) {
     controller = new AbortController();
     var ai = appendAssistantMsg();
     var think = null;
     var toolsBox = null;
     var bodyEl = ai.querySelector(".msg-body");
     var textBuf = "";
-    var thinkBuf = "";
     var thinkStart = 0;
-    var textStart = 0;
     var rafPending = false;
 
     function renderBody() {
@@ -302,7 +342,6 @@
       try { data = JSON.parse(evData); } catch (e) { return; }
 
       if (evName === "delta") {
-        if (!textStart) textStart = performance.now();
         hideStatus(ai);
         if (think && think.root.open) think.root.open = false;
         textBuf += data.text || "";
@@ -310,8 +349,7 @@
       } else if (evName === "thinking") {
         if (!thinkStart) thinkStart = performance.now();
         if (!think) think = buildThinking(ai);
-        thinkBuf += data.text || "";
-        think.body.textContent = thinkBuf;
+        think.body.textContent += data.text || "";
         think.body.scrollTop = think.body.scrollHeight;
         maybeScroll();
       } else if (evName === "tool") {
@@ -319,16 +357,19 @@
         toolsBox = ensureToolsBox(ai);
         handleToolLine(toolsBox, data);
         maybeScroll();
+      } else if (evName === "usage") {
+        // Trạng thái mức dùng mới nhất (kể cả bị ép 100% vì lỗi 429)
+        window.updateUsage && window.updateUsage(data);
       } else if (evName === "done") {
         if (data.truncated) {
-          appendNotice(ai, "Câu trả lời này đã bị ngắt vì đạt giới hạn đầu ra.", "warn");
+          appendNotice(ai, T.truncated, "warn");
         }
         if (think && think.label) {
           var dur = data.duration_ms ? data.duration_ms / 1000 : (performance.now() - (thinkStart || performance.now())) / 1000;
-          think.label.textContent = "Đã suy nghĩ · " + dur.toFixed(1) + "s";
+          think.label.textContent = MORE.thought + " · " + dur.toFixed(1) + "s";
         }
       } else if (evName === "error") {
-        appendNotice(ai, data.message || "Có lỗi xảy ra, vui lòng thử lại.", "error");
+        appendNotice(ai, data.message || T.errGeneric, "error");
       }
     }
 
@@ -339,7 +380,29 @@
         headers: jsonHeaders(),
         body: JSON.stringify(body),
       });
-      if (!resp.ok || !resp.body) throw new Error("http " + resp.status);
+      if (!resp.ok) {
+        // 429 mức dùng: cập nhật thanh usage, hoàn tác tin nhắn
+        if (resp.status === 429) {
+          var j = null;
+          try { j = await resp.json(); } catch (e) {}
+          if (j && j.usage && window.updateUsage) {
+            window.updateUsage(j.usage);
+          }
+          if (ctxInfo.userEl && ctxInfo.content) {
+            ctxInfo.userEl.remove();
+            input.value = ctxInfo.content;
+            autoresize();
+            updateSendState();
+          }
+          window.toast && toast((j && j.message) || T.errGeneric, "error");
+          ai.remove();
+          setStreaming(false);
+          controller = null;
+          return;
+        }
+        throw new Error("http " + resp.status);
+      }
+      if (!resp.body) throw new Error("no body");
       var reader = resp.body.getReader();
       var decoder = new TextDecoder();
       var buf = "";
@@ -354,9 +417,9 @@
       if (buf.trim()) handleFrame(buf);
     } catch (err) {
       if (err && err.name === "AbortError") {
-        appendNotice(ai, "Đã dừng tạo câu trả lời.", "info");
+        appendNotice(ai, MORE.stopped, "info");
       } else {
-        appendNotice(ai, "Halis tạm thời không phản hồi. Vui lòng thử lại sau ít phút.", "error");
+        appendNotice(ai, T.errGeneric, "error");
       }
     }
 
@@ -391,7 +454,7 @@
       if (titleEl) titleEl.textContent = title;
       triggerConvRefresh();
     } catch (e) {
-      window.toast && toast("Không đổi được tên.", "error");
+      window.toast && toast(T.cannotRename || "Không đổi được tên.", "error");
     }
   }
 })();

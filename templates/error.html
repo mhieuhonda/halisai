@@ -1,12 +1,21 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#f8f8f8">
   <title>{{ title }} · HalisAI</title>
   <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+  <link rel="preload" href="/static/fonts/Inter-Variable.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("halis_theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) { /* bỏ qua */ }
+    })();
+  </script>
 </head>
 <body class="auth-body">
   <div class="auth-wrap">

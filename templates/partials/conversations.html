@@ -1,18 +1,25 @@
-{% if convs.is_empty() %}
-<div class="conv-empty">Chưa có cuộc trò chuyện nào</div>
+{% if groups.is_empty() %}
+<div class="conv-empty">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <span>{{ t.no_conversations }}</span>
+</div>
 {% else %}
-<ul class="conv-list">
-{% for c in convs %}
-  <li class="conv-item{% if c.active %} active{% endif %}">
-    <a class="conv-link" href="/chat/{{ c.id }}" @click="drawer = false">
-      <span class="conv-title">{{ c.title }}</span>
-      <span class="conv-time">{{ c.rel }}</span>
-    </a>
-    <button class="icon-btn conv-del" data-conv="{{ c.id }}" title="Xóa cuộc trò chuyện" aria-label="Xóa"
-      hx-post="/api/conversations/{{ c.id }}/delete" hx-confirm="Xóa cuộc trò chuyện này?" hx-swap="none">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-    </button>
-  </li>
+{% for g in groups %}
+<div class="conv-group">
+  <div class="conv-group-label">{{ g.label }}</div>
+  <ul class="conv-list">
+    {% for c in g.convs %}
+    <li class="conv-item{% if c.active %} active{% endif %}">
+      <a class="conv-link" href="/chat/{{ c.id }}" @click="drawer = false">
+        <span class="conv-title">{{ c.title }}</span>
+      </a>
+      <button class="icon-btn conv-del" data-conv="{{ c.id }}" title="{{ t.delete_conv }}" aria-label="{{ t.delete }}"
+        hx-post="/api/conversations/{{ c.id }}/delete" hx-confirm="{{ t.confirm_delete_conv }}" hx-swap="none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
 {% endfor %}
-</ul>
 {% endif %}
