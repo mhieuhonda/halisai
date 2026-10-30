@@ -16,15 +16,17 @@ use crate::ai::{self, AgentEvent};
 use crate::auth::AuthUser;
 use crate::db;
 use crate::error::{error_page, AppResult};
-use crate::routes::{build_ctx, ConvItem, Ctx};
+use crate::routes::{build_ctx, group_conversations, ConvItem, ConversationsPartial, Ctx};
 use crate::state::AppState;
-use crate::util::{markdown_to_html, relative_time, truncate_chars};
+use crate::usage;
+use crate::util::{markdown_to_html, truncate_chars};
 use time::OffsetDateTime;
 
 #[derive(Template)]
 #[template(path = "chat.html")]
 pub struct ChatPage {
     pub ctx: Ctx,
+    pub t: &'static crate::i18n::Strings,
     pub active: Option<ActiveConv>,
     pub messages: Vec<MsgView>,
 }
@@ -53,7 +55,7 @@ pub struct ToolView {
     pub ms: i64,
 }
 
-fn to_msg_views(msgs: &[db::chat::Message], now: OffsetDateTime) -> Vec<MsgView> {
+fn to_msg_views(msgs: &[db::chat::Message], now: OffsetDateTime, lang: &str) -> Vec<MsgView> {
     msgs.iter()
         .map(|m| MsgView {
             role: m.role.clone(),
@@ -65,7 +67,7 @@ fn to_msg_views(msgs: &[db::chat::Message], now: OffsetDateTime) -> Vec<MsgView>
             thinking: m.thinking.clone().filter(|t| !t.trim().is_empty()),
             tools: parse_tools(m.tools.as_ref()),
             truncated: m.finish_reason.as_deref() == Some("length"),
-            rel: relative_time(m.created_at, now),
+            rel: crate::i18n::relative_time(m.created_at, now, lang),
             dur_s: m.duration_ms.map(|d| (d as f64) / 1000.0),
         })
         .collect()
@@ -90,7 +92,8 @@ fn parse_tools(tools: Option<&serde_json::Value>) -> Vec<ToolView> {
 
 pub async fn chat_home(State(state): State<AppState>, auth: AuthUser) -> AppResult<Response> {
     let ctx = build_ctx(&state, &auth).await;
-    Ok(Html(ChatPage { ctx, active: None, messages: vec![] }.render()?).into_response())
+    let t = crate::i18n::Strings::for_lang(&auth.user.lang);
+    Ok(Html(ChatPage { ctx, t, active: None, messages: vec![] }.render()?).into_response())
 }
 
 pub async fn chat_page(
@@ -99,16 +102,20 @@ pub async fn chat_page(
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
     let Some(conv) = db::chat::get_conversation(&state.pool, id, auth.user.id).await? else {
-        return Err(crate::error::AppError::NotFound("Cuộc trò chuyện không tồn tại.".into()));
+        return Err(crate::error::AppError::NotFound(
+            crate::i18n::Strings::for_lang(&auth.user.lang).conv_not_found.to_string(),
+        ));
     };
     let msgs = db::chat::list_messages(&state.pool, id, 100).await?;
     let ctx = build_ctx(&state, &auth).await;
+    let t = crate::i18n::Strings::for_lang(&auth.user.lang);
     let now = OffsetDateTime::now_utc();
     Ok(Html(
         ChatPage {
             ctx,
+            t,
             active: Some(ActiveConv { id: conv.id, title: conv.title }),
-            messages: to_msg_views(&msgs, now),
+            messages: to_msg_views(&msgs, now, &auth.user.lang),
         }
         .render()?,
     )
@@ -126,17 +133,18 @@ pub async fn conversations_partial(
     Query(q): Query<ConversationsQuery>,
 ) -> AppResult<Response> {
     let convs = db::chat::list_conversations(&state.pool, auth.user.id).await?;
-    let now = OffsetDateTime::now_utc();
+    let lang = auth.user.lang.clone();
     let items = convs
         .into_iter()
         .map(|c| ConvItem {
             id: c.id,
             title: c.title,
-            rel: relative_time(c.updated_at, now),
             active: q.active == Some(c.id),
+            updated_at: c.updated_at,
         })
         .collect();
-    Ok(Html(crate::routes::ConversationsPartial { convs: items }.render()?).into_response())
+    let groups = group_conversations(items, &lang);
+    Ok(Html(ConversationsPartial { groups, t: crate::i18n::Strings::for_lang(&lang) }.render()?).into_response())
 }
 
 pub async fn messages_partial(
@@ -145,17 +153,19 @@ pub async fn messages_partial(
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
     if db::chat::get_conversation(&state.pool, id, auth.user.id).await?.is_none() {
-        return Err(crate::error::AppError::NotFound("Không tồn tại.".into()));
+        return Err(crate::error::AppError::NotFound("404".into()));
     }
     let msgs = db::chat::list_messages(&state.pool, id, 100).await?;
     let now = OffsetDateTime::now_utc();
-    Ok(Html(MessagesPartial { messages: to_msg_views(&msgs, now) }.render()?).into_response())
+    let views = to_msg_views(&msgs, now, &auth.user.lang);
+    Ok(Html(MessagesPartial { messages: views, t: crate::i18n::Strings::for_lang(&auth.user.lang) }.render()?).into_response())
 }
 
 #[derive(Template)]
 #[template(path = "partials/messages.html")]
 pub struct MessagesPartial {
     pub messages: Vec<MsgView>,
+    pub t: &'static crate::i18n::Strings,
 }
 
 // ============== Tao / sua / xoa cuoc tro chuyen ==============
@@ -222,6 +232,39 @@ pub async fn delete_conversation(
         .into_response())
 }
 
+// ============== Mức dùng ==============
+
+/// Trạng thái mức dùng hiện tại dưới dạng JSON.
+pub async fn usage_json(State(state): State<AppState>, auth: AuthUser) -> Response {
+    let snap = usage::snapshot(&state.pool, auth.user.id).await;
+    axum::Json(snap.to_json()).into_response()
+}
+
+/// Phản hồi 429 kèm thông tin mức dùng để giao diện vẽ thanh usage.
+fn usage_denied(snap: usage::Snapshot, t: &crate::i18n::Strings) -> Response {
+    let resets = snap
+        .resets_at
+        .map(|r| {
+            let local = r.to_offset(time::macros::offset!(+7));
+            format!("{} {}", t.resets_at, crate::i18n::clock_time(local, t.lang))
+        })
+        .unwrap_or_default();
+    let message = if t.lang == "en" {
+        format!("{} · {}", t.limit_reached, resets)
+    } else {
+        format!("{} · {}", t.limit_reached, resets)
+    };
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        axum::Json(json!({
+            "error": "usage_limit",
+            "message": message,
+            "usage": snap.to_json(),
+        })),
+    )
+        .into_response()
+}
+
 // ============== Gui tin nhan (SSE) ==============
 
 #[derive(Deserialize)]
@@ -235,30 +278,38 @@ pub async fn send_message(
     auth: AuthUser,
     axum::Json(body): axum::Json<SendMessageBody>,
 ) -> Response {
+    let lang = auth.user.lang.clone();
+    let t = crate::i18n::Strings::for_lang(&lang);
     let content = body.content.unwrap_or_default().trim().to_string();
     if content.is_empty() {
-        return error_page(StatusCode::BAD_REQUEST, "Thiếu nội dung", "Tin nhắn không được để trống.");
+        return error_page(StatusCode::BAD_REQUEST, "400", t.msg_empty);
     }
     if content.chars().count() > 32_000 {
-        return error_page(StatusCode::BAD_REQUEST, "Quá dài", "Tin nhắn giới hạn 32.000 ký tự.");
+        return error_page(StatusCode::BAD_REQUEST, "400", t.msg_too_long);
     }
+
+    // Mức dùng hàng giờ: chặn khi đã đạt giới hạn
+    let usage_snap = match usage::check_and_record(&state.pool, auth.user.id).await {
+        usage::Decision::Deny(snap) => return usage_denied(snap, t),
+        usage::Decision::Allow(snap) => snap,
+    };
 
     // Gioi han toc do: 20 tin / phut / nguoi dung
     if !state.rl.allow(auth.user.id, 20, Duration::from_secs(60)) {
-        return error_page(StatusCode::TOO_MANY_REQUESTS, "Quá nhanh", "Bạn gửi tin quá nhanh, vui lòng chờ một chút.");
+        return error_page(StatusCode::TOO_MANY_REQUESTS, "429", t.too_fast);
     }
 
     // Tim hoac tao cuoc tro chuyen
     let conv_id = match body.conversation_id {
         Some(id) => match db::chat::get_conversation(&state.pool, id, auth.user.id).await {
             Ok(Some(c)) => c.id,
-            _ => return error_page(StatusCode::NOT_FOUND, "Không tồn tại", "Cuộc trò chuyện không tồn tại."),
+            _ => return error_page(StatusCode::NOT_FOUND, "404", t.conv_not_found),
         },
         None => match db::chat::create_conversation(&state.pool, auth.user.id, "Cuộc trò chuyện mới").await {
             Ok(c) => c.id,
             Err(e) => {
                 tracing::error!("tao conv loi: {e}");
-                return error_page(StatusCode::INTERNAL_SERVER_ERROR, "Lỗi", "Không tạo được cuộc trò chuyện.");
+                return error_page(StatusCode::INTERNAL_SERVER_ERROR, "500", "Không tạo được cuộc trò chuyện.");
             }
         },
     };
@@ -279,7 +330,7 @@ pub async fn send_message(
     .await
     {
         tracing::error!("luu tin nhan loi: {e}");
-        return error_page(StatusCode::INTERNAL_SERVER_ERROR, "Lỗi", "Không lưu được tin nhắn.");
+        return error_page(StatusCode::INTERNAL_SERVER_ERROR, "500", "Không lưu được tin nhắn.");
     }
     let _ = db::chat::touch_conversation(&state.pool, conv_id).await;
 
@@ -291,7 +342,7 @@ pub async fn send_message(
         }
     }
 
-    stream_response(state, conv_id).await
+    stream_response(state, conv_id, auth.user.id, lang, usage_snap).await
 }
 
 pub async fn regenerate(
@@ -299,22 +350,35 @@ pub async fn regenerate(
     auth: AuthUser,
     axum::Json(body): axum::Json<SendMessageBody>,
 ) -> Response {
+    let lang = auth.user.lang.clone();
+    let t = crate::i18n::Strings::for_lang(&lang);
     let Some(conv_id) = body.conversation_id else {
-        return error_page(StatusCode::BAD_REQUEST, "Thiếu tham số", "Cần có conversation_id.");
+        return error_page(StatusCode::BAD_REQUEST, "400", "Cần có conversation_id.");
     };
     if db::chat::get_conversation(&state.pool, conv_id, auth.user.id).await.ok().flatten().is_none() {
-        return error_page(StatusCode::NOT_FOUND, "Không tồn tại", "Cuộc trò chuyện không tồn tại.");
+        return error_page(StatusCode::NOT_FOUND, "404", t.conv_not_found);
     }
+
+    let usage_snap = match usage::check_and_record(&state.pool, auth.user.id).await {
+        usage::Decision::Deny(snap) => return usage_denied(snap, t),
+        usage::Decision::Allow(snap) => snap,
+    };
     if !state.rl.allow(auth.user.id, 20, Duration::from_secs(60)) {
-        return error_page(StatusCode::TOO_MANY_REQUESTS, "Quá nhanh", "Bạn gửi tin quá nhanh, vui lòng chờ một chút.");
+        return error_page(StatusCode::TOO_MANY_REQUESTS, "429", t.too_fast);
     }
     // Xoa phan tra loi cu
     let _ = db::chat::delete_after_last_user(&state.pool, conv_id).await;
-    stream_response(state, conv_id).await
+    stream_response(state, conv_id, auth.user.id, lang, usage_snap).await
 }
 
 /// Tao SSE response; worker chay agent loop o background.
-async fn stream_response(state: AppState, conv_id: Uuid) -> Response {
+async fn stream_response(
+    state: AppState,
+    conv_id: Uuid,
+    user_id: Uuid,
+    lang: String,
+    initial_usage: usage::Snapshot,
+) -> Response {
     // He thong prompt tu settings
     let system_prompt = db::misc::get_setting(&state.pool, "system_prompt")
         .await
@@ -326,9 +390,14 @@ async fn stream_response(state: AppState, conv_id: Uuid) -> Response {
 
     let pool = state.pool.clone();
     let ai = state.ai.clone();
+    let tools = state.tools.clone();
+    let usage_lang = lang.clone();
     tokio::spawn(async move {
+        // Trạng thái usage sau khi ghi nhận lượt này
+        let _ = tx.send(AgentEvent::Usage(initial_usage)).await;
+
         let started = std::time::Instant::now();
-        match ai::run_turn(&ai, &pool, conv_id, &system_prompt, tx.clone()).await {
+        match ai::run_turn(&ai, &tools, &pool, conv_id, &system_prompt, &usage_lang, tx.clone()).await {
             Ok(outcome) => {
                 let duration = started.elapsed().as_millis() as u64;
                 let truncated = outcome.finish_reason == "length";
@@ -338,9 +407,23 @@ async fn stream_response(state: AppState, conv_id: Uuid) -> Response {
                     .await;
                 let _ = message_id;
             }
+            Err(ai::TurnError::RateLimited) => {
+                // Gateway 429: ép mức dùng về 100% và khoá (chỉ một lần)
+                let snap = usage::force_block(&pool, user_id).await;
+                let t = crate::i18n::Strings::for_lang(&usage_lang);
+                let resets = snap
+                    .resets_at
+                    .map(|r| {
+                        let local = r.to_offset(time::macros::offset!(+7));
+                        format!("{} {}", t.resets_at, crate::i18n::clock_time(local, t.lang))
+                    })
+                    .unwrap_or_default();
+                let _ = tx.send(AgentEvent::Usage(snap)).await;
+                let _ = tx.send(AgentEvent::Error(format!("{} · {}", t.limit_reached, resets))).await;
+            }
             Err(_) => {
                 // Loi chi tiet da log o lop duoi; gui thong bao chung chung
-                let _ = tx.send(AgentEvent::Error(ai::generic_error_message())).await;
+                let _ = tx.send(AgentEvent::Error(ai::generic_error_message(&usage_lang))).await;
             }
         }
     });
@@ -366,6 +449,11 @@ async fn stream_response(state: AppState, conv_id: Uuid) -> Response {
                 Event::default()
                     .event("tool")
                     .data(json!({ "name": name, "status": "done", "ms": ms, "summary": summary }).to_string()),
+            ),
+            AgentEvent::Usage(snap) => Some(
+                Event::default()
+                    .event("usage")
+                    .data(snap.to_json().to_string()),
             ),
             AgentEvent::Done { truncated, duration_ms } => Some(
                 Event::default()

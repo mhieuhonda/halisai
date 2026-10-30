@@ -1,17 +1,19 @@
 pub mod admin;
 pub mod chat;
 pub mod login;
+pub mod settings;
 
 use askama::Template;
 use axum::routing::{get, post};
 use axum::Router;
 
 use crate::auth::AuthUser;
+use crate::i18n;
 use crate::state::AppState;
+use crate::usage;
 
 /// Du lieu chung cho moi trang.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Ctx {
     pub csrf: String,
     pub user_name: String,
@@ -22,6 +24,10 @@ pub struct Ctx {
     pub announcement: Option<String>,
     pub ann_key: String,
     pub is_staff: bool,
+    pub lang: String,
+    pub theme: String,
+    pub t: &'static i18n::Strings,
+    pub usage: usage::Snapshot,
 }
 
 pub async fn build_ctx(state: &AppState, auth: &AuthUser) -> Ctx {
@@ -35,6 +41,7 @@ pub async fn build_ctx(state: &AppState, auth: &AuthUser) -> Ctx {
         .as_ref()
         .map(|s| crate::util::hash_token(s)[..12].to_string())
         .unwrap_or_default();
+    let usage_snap = usage::snapshot(&state.pool, auth.user.id).await;
     Ctx {
         csrf: auth.csrf.clone(),
         user_name: auth.user.name.clone(),
@@ -51,12 +58,24 @@ pub async fn build_ctx(state: &AppState, auth: &AuthUser) -> Ctx {
         announcement,
         ann_key,
         is_staff: auth.user.is_staff(),
+        lang: auth.user.lang.clone(),
+        theme: auth.user.theme.clone(),
+        t: i18n::Strings::for_lang(&auth.user.lang),
+        usage: usage_snap,
     }
 }
 
 #[derive(Template)]
 #[template(path = "partials/conversations.html")]
 pub struct ConversationsPartial {
+    pub groups: Vec<ConvGroup>,
+    pub t: &'static i18n::Strings,
+}
+
+/// Nhóm cuộc trò chuyện theo thời gian.
+#[derive(Clone, Debug)]
+pub struct ConvGroup {
+    pub label: String,
     pub convs: Vec<ConvItem>,
 }
 
@@ -64,8 +83,40 @@ pub struct ConversationsPartial {
 pub struct ConvItem {
     pub id: uuid::Uuid,
     pub title: String,
-    pub rel: String,
     pub active: bool,
+    pub updated_at: time::OffsetDateTime,
+}
+
+/// Xếp các cuộc trò chuyện vào nhóm theo ngày cập nhật (theo giờ GMT+7).
+fn group_conversations(convs: Vec<ConvItem>, lang: &str) -> Vec<ConvGroup> {
+    let now = crate::util::local_now();
+    let today = now.date();
+    let groups: [(&str, i64); 5] = [
+        (i18n::Strings::for_lang(lang).today, 0),
+        (i18n::Strings::for_lang(lang).yesterday, 1),
+        (i18n::Strings::for_lang(lang).last7, 7),
+        (i18n::Strings::for_lang(lang).last30, 30),
+        (i18n::Strings::for_lang(lang).older, i64::MAX),
+    ];
+    let mut out: Vec<ConvGroup> = Vec::new();
+    for (label, _days) in groups {
+        out.push(ConvGroup { label: label.to_string(), convs: Vec::new() });
+    }
+    for c in convs {
+        // updated_at đang là UTC; quy về ngày GMT+7 để so khớp hôm nay
+        let local = c.updated_at.to_offset(time::macros::offset!(+7)).date();
+        let diff_days = (today - local).whole_days();
+        let idx = match diff_days {
+            0 => 0,
+            1 => 1,
+            2..=7 => 2,
+            8..=30 => 3,
+            _ => 4,
+        };
+        out[idx].convs.push(c);
+    }
+    out.retain(|g| !g.convs.is_empty());
+    out
 }
 
 pub fn router(state: AppState) -> Router {
@@ -80,7 +131,11 @@ pub fn router(state: AppState) -> Router {
         .route("/api/conversations/{id}/delete", post(chat::delete_conversation))
         .route("/api/chat", post(chat::send_message))
         .route("/api/chat/regenerate", post(chat::regenerate))
+        .route("/api/usage", get(chat::usage_json))
         .route("/api/ping", get(chat::ping))
+        // Cài đặt người dùng
+        .route("/settings", get(settings::page))
+        .route("/api/settings/prefs", post(settings::save_prefs))
         // Auth
         .route("/login", get(login::login_page))
         .route("/auth/google", get(login::google_start))

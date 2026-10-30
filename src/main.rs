@@ -3,9 +3,11 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod i18n;
 mod routes;
 mod state;
 mod tools;
+mod usage;
 mod util;
 
 use std::sync::Arc;
@@ -14,6 +16,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::ai::AiClient;
 use crate::state::{AppState, RateLimiter};
+use crate::tools::Tools;
 
 /// Doc file .env (khong ghi de bien da co trong moi truong).
 fn load_dotenv() {
@@ -59,12 +62,14 @@ async fn main() {
         .expect("tao http client");
 
     let ai = Arc::new(AiClient::new(&cfg.ai_base_url, &cfg.ai_model, cfg.ai_max_output_tokens));
+    let tools = Arc::new(Tools::new());
 
     let state = AppState {
         pool,
         cfg: cfg.clone(),
         http,
         ai,
+        tools,
         rl: Arc::new(RateLimiter::new()),
     };
 
