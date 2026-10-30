@@ -6,6 +6,7 @@ use sqlx::PgPool;
 
 use crate::ai::AiClient;
 use crate::config::Config;
+use crate::tools::Tools;
 
 /// Gioi han don gian theo cua so truot.
 pub struct RateLimiter {
@@ -42,5 +43,6 @@ pub struct AppState {
     pub cfg: Arc<Config>,
     pub http: reqwest::Client,
     pub ai: Arc<AiClient>,
+    pub tools: Arc<Tools>,
     pub rl: Arc<RateLimiter>,
 }

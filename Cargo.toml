@@ -49,6 +49,7 @@ jsonwebtoken = "9"
 
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ammonia = "4"
+time-tz = { version = "2", features = ["db"] }
 
 [profile.dev]
 opt-level = 0

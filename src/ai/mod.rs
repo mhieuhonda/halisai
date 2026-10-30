@@ -3,12 +3,175 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 use crate::db;
-use crate::tools;
-use crate::util::local_now;
+use crate::tools::Tools;
+use crate::usage;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const MAX_TOOL_STEPS: usize = 8;
+const MAX_TOOL_STEPS: usize = 10;
+
+/// Một số model phát lệnh gọi tool ngay trong nội dung văn bản thay vì
+/// qua cơ chế tool_calls chuẩn. Bộ lọc này che khối lệnh khỏi luồng hiển thị
+/// và trả lại để thực thi như một tool call thật.
+///
+/// Dạng được hỗ trợ:
+/// <function=tên>
+/// <parameter=khóa>giá trị</parameter>
+/// </function>
+pub struct DeltaFilter {
+    buf: String,
+    /// Vị trí đã quét tới trong buf (đã emit hoặc đã tách thành khối lệnh).
+    pos: usize,
+    blocks: Vec<ToolCall>,
+    counter: usize,
+}
+
+const FN_OPEN: &str = "<function=";
+const FN_CLOSE: &str = "</function>";
+
+impl DeltaFilter {
+    pub fn new() -> Self {
+        Self { buf: String::new(), pos: 0, blocks: Vec::new(), counter: 0 }
+    }
+
+    /// Nạp thêm văn bản, trả về phần được phép hiển thị ngay.
+    pub fn push(&mut self, s: &str) -> String {
+        self.buf.push_str(s);
+        self.drain(false)
+    }
+
+    /// Kết thúc một step: trả về phần văn bản còn lại (không giữ lại gì).
+    pub fn finish(&mut self) -> String {
+        let rest = self.drain(true);
+        self.buf.clear();
+        self.pos = 0;
+        rest
+    }
+
+    /// Các khối lệnh đã tách được từ văn bản.
+    pub fn take_blocks(&mut self) -> Vec<ToolCall> {
+        std::mem::take(&mut self.blocks)
+    }
+
+    /// true nếu buf từ pos bắt đầu bằng (hoặc là tiền tố của) FN_OPEN.
+    fn looks_like_open(&self) -> bool {
+        let tail = &self.buf[self.pos..];
+        if tail.len() >= FN_OPEN.len() {
+            tail.starts_with(FN_OPEN)
+        } else {
+            FN_OPEN.starts_with(tail)
+        }
+    }
+
+    fn drain(&mut self, final_flush: bool) -> String {
+        let mut out = String::new();
+        loop {
+            let rest = &self.buf[self.pos..];
+            if rest.is_empty() {
+                break;
+            }
+            let Some(rel) = rest.find('<') else {
+                // Không còn '<': với flush cuối emit hết, ngược lại giữ 1 ký tự
+                // phòng trường hợp nó là mảnh của "<function=" vừa tới.
+                out.push_str(rest);
+                self.pos = self.buf.len();
+                break;
+            };
+            // Văn bản trước '<' luôn được emit
+            out.push_str(&rest[..rel]);
+            self.pos += rel;
+            if !self.looks_like_open() {
+                // '<' thường: emit luôn và quét tiếp
+                out.push('<');
+                self.pos += 1;
+                continue;
+            }
+            // Có khả năng là khối lệnh
+            let tail = &self.buf[self.pos..];
+            if tail.len() < FN_OPEN.len() {
+                // Chưa đủ độ dài: giữ lại nếu chưa flush cuối
+                if final_flush {
+                    // Không phải khối (thiếu ">") — emit như văn bản
+                    out.push_str(tail);
+                    self.pos = self.buf.len();
+                }
+                break;
+            }
+            // Đủ "<function=" — tìm tên và thẻ đóng
+            let after_name = match tail[FN_OPEN.len()..].find('>') {
+                Some(g) => &tail[FN_OPEN.len()..FN_OPEN.len() + g],
+                None => {
+                    if final_flush {
+                        out.push_str(tail);
+                        self.pos = self.buf.len();
+                    }
+                    break;
+                }
+            };
+            if after_name.is_empty() || !after_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                // Không phải tên hàm hợp lệ — emit '<' và bỏ qua
+                out.push('<');
+                self.pos += 1;
+                continue;
+            }
+            let name = after_name.to_string();
+            match tail.find(FN_CLOSE) {
+                Some(end_rel) => {
+                    let body = tail[..end_rel].to_string();
+                    if let Some(call) = parse_block(&name, &body, &mut self.counter) {
+                        self.blocks.push(call);
+                    }
+                    self.pos += end_rel + FN_CLOSE.len();
+                }
+                None => {
+                    if final_flush {
+                        // Khối chưa đóng: vẫn cố parse phần có được
+                        if let Some(call) = parse_block(&name, tail, &mut self.counter) {
+                            self.blocks.push(call);
+                        }
+                        self.pos = self.buf.len();
+                    }
+                    // Chưa có thẻ đóng: giữ nguyên chờ chunk sau
+                    break;
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Tách các cặp <parameter=khóa>giá trị</parameter> thành tham số JSON.
+fn parse_block(name: &str, body: &str, counter: &mut usize) -> Option<ToolCall> {
+    let mut args = serde_json::Map::new();
+    let mut rest = body;
+    loop {
+        let Some(p) = rest.find("<parameter=") else { break };
+        let after = &rest[p + 11..];
+        let Some(g) = after.find('>') else { break };
+        let key = &after[..g];
+        let after_key = &after[g + 1..];
+        let Some(close) = after_key.find("</parameter>") else { break };
+        let raw = &after_key[..close];
+        let value = raw.trim();
+        // Thử đọc như JSON, không được thì coi là chuỗi
+        let val = match serde_json::from_str::<Json>(value) {
+            Ok(v) => v,
+            Err(_) => Json::String(value.to_string()),
+        };
+        if !key.is_empty() {
+            args.insert(key.to_string(), val);
+        }
+        rest = &after_key[close + 12..];
+    }
+    let id = format!("textcall_{}", counter);
+    *counter += 1;
+    Some(ToolCall {
+        id,
+        name: name.to_string(),
+        arguments: Json::Object(args).to_string(),
+    })
+}
+
 const HISTORY_LIMIT: i64 = 30;
 
 #[derive(Clone)]
@@ -46,8 +209,19 @@ pub enum AgentEvent {
     Delta(String),
     ToolStart { name: String },
     ToolDone { name: String, ms: u64, summary: String },
+    Usage(usage::Snapshot),
     Done { truncated: bool, duration_ms: u64 },
     Error(String),
+}
+
+/// Loi trong mot luot chay agent.
+#[derive(Debug)]
+pub enum TurnError {
+    /// Gateway tra 429: het han muc, can ep thanh usage ve 100%.
+    RateLimited,
+    /// Loi gateway / stream khac (da log chi tiet).
+    Gateway,
+    Db,
 }
 
 /// Ket qua mot luot tra loi hoan chinh (mot "turn" gom nhieu "step").
@@ -159,23 +333,21 @@ async fn stream_step(
     ai: &AiClient,
     body: Json,
     tx: &mpsc::Sender<AgentEvent>,
-) -> Result<(StepResult, bool), String> {
-    let resp = ai
-        .http
-        .post(ai.endpoint())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("loi goi gateway: {e}");
-            "gateway".to_string()
-        })?;
+) -> Result<(StepResult, bool), TurnError> {
+    let resp = ai.http.post(ai.endpoint()).json(&body).send().await.map_err(|e| {
+        tracing::error!("loi goi gateway: {e}");
+        TurnError::Gateway
+    })?;
     if !resp.status().is_success() {
         let status = resp.status();
+        if status.as_u16() == 429 {
+            tracing::warn!("gateway tra ve 429");
+            return Err(TurnError::RateLimited);
+        }
         let text = resp.text().await.unwrap_or_default();
         // Chi log phia server, khong hien thi cho nguoi dung
         tracing::error!("gateway tra ve {status}: {}", &text[..text.len().min(400)]);
-        return Err("gateway".into());
+        return Err(TurnError::Gateway);
     }
 
     let mut buffer = Vec::new();
@@ -184,11 +356,12 @@ async fn stream_step(
     let mut step = StepResult::default();
     let mut seen_done = false;
     let mut client_gone = false;
+    let mut filter = DeltaFilter::new();
 
     'outer: while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| {
             tracing::error!("loi doc stream: {e}");
-            "stream".to_string()
+            TurnError::Gateway
         })?;
         buffer.extend_from_slice(&bytes);
         while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
@@ -207,11 +380,15 @@ async fn stream_step(
             let Some(chunk_json) = parse_sse_payload(data) else { continue };
             let part = extract_step(&chunk_json);
             if !part.content.is_empty() {
-                if tx.send(AgentEvent::Delta(part.content.clone())).await.is_err() {
-                    client_gone = true;
-                    break 'outer;
+                // Che khối lệnh tool dạng văn bản, chỉ phát phần hiển thị được
+                let visible = filter.push(&part.content);
+                if !visible.is_empty() {
+                    if tx.send(AgentEvent::Delta(visible.clone())).await.is_err() {
+                        client_gone = true;
+                        break 'outer;
+                    }
+                    step.content.push_str(&visible);
                 }
-                step.content.push_str(&part.content);
             }
             if !part.thinking.is_empty() {
                 if tx.send(AgentEvent::Thinking(part.thinking.clone())).await.is_err() {
@@ -229,6 +406,18 @@ async fn stream_step(
         }
     }
     let _ = seen_done;
+    // Phần văn bản còn kẹt trong bộ lọc và các lệnh gọi tool dạng văn bản
+    let tail = filter.finish();
+    if !tail.is_empty() && !client_gone {
+        if tx.send(AgentEvent::Delta(tail.clone())).await.is_ok() {
+            step.content.push_str(&tail);
+        }
+    }
+    let text_blocks = filter.take_blocks();
+    if !text_blocks.is_empty() {
+        tracing::debug!("tách {} lệnh gọi tool từ văn bản", text_blocks.len());
+        step.tool_calls.extend(text_blocks);
+    }
     Ok((step, client_gone))
 }
 
@@ -236,20 +425,22 @@ async fn stream_step(
 /// Ket qua duoc luu vao DB va phat su kien qua channel.
 pub async fn run_turn(
     ai: &AiClient,
+    tools: &Tools,
     pool: &PgPool,
     conversation_id: Uuid,
     system_prompt: &str,
+    lang: &str,
     tx: mpsc::Sender<AgentEvent>,
-) -> Result<TurnOutcome, String> {
+) -> Result<TurnOutcome, TurnError> {
     // Lich su tin nhan
     let history = db::chat::list_messages(pool, conversation_id, HISTORY_LIMIT)
         .await
         .map_err(|e| {
             tracing::error!("doc lich su that bai: {e}");
-            "db".to_string()
+            TurnError::Db
         })?;
     let mut messages: Vec<Json> = Vec::with_capacity(history.len() + 2);
-    let full_system = format!("{system_prompt}\n\nThời gian hiện tại của người dùng: {}.", crate::util::format_full(local_now()));
+    let full_system = build_system_prompt(system_prompt, lang);
     messages.push(json!({ "role": "system", "content": full_system }));
     for m in &history {
         if m.content.trim().is_empty() {
@@ -258,7 +449,7 @@ pub async fn run_turn(
         messages.push(json!({ "role": m.role, "content": m.content }));
     }
 
-    let tool_schemas = tools::schemas();
+    let tool_schemas = crate::tools::schemas();
     let mut outcome = TurnOutcome::default();
     let mut cancelled = false;
 
@@ -269,9 +460,7 @@ pub async fn run_turn(
             "stream": true,
             "max_tokens": ai.max_tokens,
         });
-        if _step == 0 {
-            body["tools"] = tool_schemas.clone();
-        }
+        body["tools"] = tool_schemas.clone();
 
         let (step, client_gone) = stream_step(ai, body, &tx).await?;
         if client_gone {
@@ -289,7 +478,7 @@ pub async fn run_turn(
         // Co tool call: thuc thi roi tiep tuc vong lap
         let assistant_msg = json!({
             "role": "assistant",
-            "content": if step.content.is_empty() { Json::Null } else { json!(step.content) },
+            "content": step.content.clone(),
             "tool_calls": step.tool_calls.iter().map(|tc| json!({
                 "id": tc.id,
                 "type": "function",
@@ -305,7 +494,7 @@ pub async fn run_turn(
             }
             let t0 = Instant::now();
             let args: Json = serde_json::from_str(&tc.arguments).unwrap_or(json!({}));
-            let result = tools::execute(&tc.name, &args).await;
+            let result = tools.execute(&tc.name, &args, lang).await;
             let ms = t0.elapsed().as_millis() as u64;
             if tx
                 .send(AgentEvent::ToolDone {
@@ -327,7 +516,7 @@ pub async fn run_turn(
             let content = if result.ok {
                 result.output
             } else {
-                format!("LỖI: {}", result.output)
+                format!("ERROR: {}", result.output)
             };
             messages.push(json!({
                 "role": "tool",
@@ -378,13 +567,78 @@ pub async fn save_turn(
     Some(msg.id)
 }
 
-pub fn generic_error_message() -> String {
-    "Halis tạm thời không phản hồi. Vui lòng thử lại sau ít phút.".into()
+pub fn generic_error_message(lang: &str) -> String {
+    if lang == "en" {
+        "Halis is temporarily unavailable. Please try again in a few minutes.".into()
+    } else {
+        "Halis tạm thời không phản hồi. Vui lòng thử lại sau ít phút.".into()
+    }
+}
+
+/// Ghép system prompt với ngữ cảnh động: ngôn ngữ người dùng và thời gian hiện tại.
+fn build_system_prompt(base: &str, lang: &str) -> String {
+    let now = crate::util::local_now();
+    let lang_name = if lang == "en" { "English" } else { "Vietnamese" };
+    let date = now.format(time::macros::format_description!(
+        "[day]/[month]/[year] [hour]:[minute]:[second]"
+    )).unwrap_or_default();
+    format!(
+        "{base}\n\n[Runtime context]\n- The user's interface language is {lang_name}. Reply in the language the user writes in; default to {lang_name}.\n- Current local time for the user: {date} (GMT+7)."
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_delta_filter_hides_tool_block() {
+        let mut f = DeltaFilter::new();
+        let out = f.push("Đây là câu trả lời. <function=web_search>\n<parameter=queries>");
+        assert_eq!(out, "Đây là câu trả lời. ");
+        let out = f.push("[\"tin tức AI\"]</parameter>\n</function>\nVà tiếp tục bình thường.");
+        assert_eq!(out, "\nVà tiếp tục bình thường.");
+        let blocks = f.take_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "web_search");
+        assert!(blocks[0].arguments.contains("tin tức AI"));
+    }
+
+    #[test]
+    fn test_delta_filter_partial_chunks() {
+        let mut f = DeltaFilter::new();
+        // Chunk cắt giữa "<function" — không được emit mảnh này
+        let a = f.push("trước <fun");
+        assert_eq!(a, "trước ");
+        let b = f.push("ction=datetime>\n<parameter=timezone>America/New_York</parameter>\n</function>");
+        assert_eq!(b, "");
+        let c = f.push(" sau");
+        assert_eq!(c, " sau");
+        let blocks = f.take_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "datetime");
+        assert!(blocks[0].arguments.contains("America/New_York"));
+    }
+
+    #[test]
+    fn test_delta_filter_keeps_normal_angle_brackets() {
+        let mut f = DeltaFilter::new();
+        let out = f.push("So sánh a < b và 3 > 2 nhé.");
+        assert_eq!(out, "So sánh a < b và 3 > 2 nhé.");
+        assert!(f.take_blocks().is_empty());
+    }
+
+    #[test]
+    fn test_delta_filter_unterminated_block() {
+        let mut f = DeltaFilter::new();
+        f.push("gọi <function=web_fetch>\n<parameter=url>https://example.com</parameter>\n</fun");
+        let out = f.finish();
+        assert_eq!(out, "");
+        let blocks = f.take_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].name, "web_fetch");
+        assert!(blocks[0].arguments.contains("example.com"));
+    }
 
     #[test]
     fn test_extract_content() {
