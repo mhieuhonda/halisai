@@ -1,6 +1,6 @@
 # HalisAI
 
-Ứng dụng chat AI ưu tiên điện thoại, tương thích máy tính. Giao diện tối kiểu terminal, hỗ trợ hiển thị quá trình suy nghĩ, gọi công cụ và streaming theo thời gian thực.
+Ứng dụng chat AI ưu tiên điện thoại, tương thích máy tính. Giao diện theo ngôn ngữ thiết kế desktop của OpenCode, sáng/tối tùy chọn (mặc định Sáng), tiếng Việt mặc định (đổi sang English trong Cài đặt), hiển thị quá trình suy nghĩ, gọi công cụ và streaming theo thời gian thực.
 
 > Halis là trợ lý AI được tạo ra và huấn luyện bởi Hieu Louis.
 
@@ -9,10 +9,23 @@
 **Chat**
 - Streaming câu trả lời theo thời gian thực (SSE)
 - Khối "Đã suy nghĩ" gập/mở hiển thị quá trình reasoning
-- Agent loop: AI tự gọi công cụ (`current_time`, `calculate`, `fetch_url`) khi cần rồi tiếp tục trả lời
+- Agent loop: AI tự gọi công cụ khi cần rồi tiếp tục trả lời
+  - `web_search`: tìm kiếm web (nhiều truy vấn song song, có dự phòng nhiều nguồn), trích dẫn nguồn trong câu trả lời
+  - `web_fetch`: đọc một URL, chuyển HTML thành markdown trước khi đưa cho model
+  - `datetime`: ngày giờ hiện tại theo múi giờ IANA bất kỳ (hoặc offset như `+7`, `-05:30`)
 - Markdown đầy đủ: code block kèm nút copy, bảng, danh sách, trích dẫn
 - Dừng tạo giữa chừng (giữ lại phần đã tạo), tạo lại câu trả lời, đổi tên/xóa cuộc trò chuyện
 - Đầu ra tối đa 32k token; câu trả lời bị cắt do chạm giới hạn sẽ được đánh dấu rõ
+
+**Giao diện & tuỳ chỉnh**
+- Thiết kế theo ngôn ngữ desktop của OpenCode: Inter + IBM Plex Mono, thanh sidebar gộp nhóm theo ngày, composer dạng thẻ nổi
+- Chủ đề Sáng (mặc định) / Tối, lưu theo tài khoản
+- Tiếng Việt (mặc định) / English, đổi trong Cài đặt; Halis cũng trả lời theo ngôn ngữ đang chọn
+
+**Mức dùng**
+- 200 tin nhắn mỗi giờ; chạm mốc thì chờ 1 giờ 5 phút để mở lại
+- Thanh usage dạng đoạn (kiểu Claude) hiển thị dưới khung soạn và chi tiết trong Cài đặt
+- Gateway trả 429: thanh usage ép về 100% và khoá 1h05 — chỉ áp dụng một lần, thử lại không cộng dồn thời gian chờ
 
 **Tài khoản**
 - Đăng nhập bằng Google (OAuth 2.0, xác thực id_token với JWKS)
@@ -52,7 +65,7 @@ Người dùng đầu tiên đăng nhập sẽ tự động trở thành admin. 
 | HTMX | 4.0.0 |
 | Alpine.js | 3.17.4 |
 
-Frontend không cần build step: HTMX + Alpine + marked + DOMPurify được vendor sẵn trong `static/vendor/`.
+Frontend không cần build step: HTMX + Alpine + marked + DOMPurify vendor trong `static/vendor/`; font Inter và IBM Plex Mono vendor trong `static/fonts/`.
 
 ## Chạy với Docker
 
@@ -110,8 +123,10 @@ src/
   ai/              # Client gateway, agent loop (turn/step), streaming SSE
   auth/            # Google OAuth, session, CSRF, phân quyền
   db/              # Truy vấn SQLx (user, session, chat, audit, settings)
-  routes/          # Handler: login, chat, admin
-  tools.rs         # Công cụ cho agent: thời gian, máy tính, đọc trang web
+  routes/          # Handler: login, chat, settings, admin
+  i18n.rs          # Chuỗi hiển thị vi/en
+  tools.rs         # Công cụ cho agent: web_search, web_fetch, datetime
+  usage.rs         # Mức dùng 200 tin/giờ + cooldown 65 phút
   util.rs          # Markdown, format thời gian, escape
 templates/         # Askama
 static/            # CSS, JS, thư viện vendor
