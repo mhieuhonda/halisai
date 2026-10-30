@@ -1,0 +1,103 @@
+{% extends "admin/layout.html" %}
+{% block title %}Tổng quan{% endblock %}
+{% block nav_dash %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Tổng quan</h1>
+  <span class="page-sub">Số liệu nhanh của hệ thống</span>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Người dùng</span>
+    </div>
+    <div class="stat-value">{{ stats.users }}</div>
+  </div>
+  <div class="stat-card stat-online">
+    <div class="stat-label">
+      <span class="online-dot" aria-hidden="true"></span>
+      <span>Đang hoạt động</span>
+    </div>
+    <div class="stat-value">{{ stats.online }}</div>
+    <div class="stat-note">hoạt động trong 2 phút qua</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Cuộc trò chuyện</span>
+    </div>
+    <div class="stat-value">{{ stats.conversations }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      <span>Tin nhắn 24h</span>
+    </div>
+    <div class="stat-value">{{ stats.messages_24h }}</div>
+    <div class="stat-note">tổng cộng {{ stats.messages_total }}</div>
+  </div>
+</div>
+
+<div class="panel-grid">
+  <section class="panel">
+    <h2 class="panel-title">Tin nhắn mỗi ngày</h2>
+    {% if chart.is_empty() %}
+    <div class="panel-empty">Chưa có dữ liệu</div>
+    {% else %}
+    <div class="bar-chart">
+      {% for d in chart %}
+      <div class="bar-col" title="{{ d.day }}: {{ d.count }} tin nhắn">
+        <div class="bar" style="height: {{ d.pct }}%"></div>
+        <span class="bar-val">{{ d.count }}</span>
+        <span class="bar-day">{{ d.day }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">Người dùng mới</h2>
+    {% if recent_users.is_empty() %}
+    <div class="panel-empty">Chưa có ai đăng ký</div>
+    {% else %}
+    <ul class="mini-list">
+      {% for u in recent_users %}
+      <li class="mini-row">
+        {% if let Some(pic) = u.picture %}<img class="avatar avatar-sm" src="{{ pic }}" alt="" referrerpolicy="no-referrer">
+        {% else %}<span class="avatar avatar-sm avatar-fallback">{{ u.initial }}</span>{% endif %}
+        <div class="mini-meta">
+          <span class="mini-name">{{ u.name }}</span>
+          <span class="mini-sub">{{ u.email }}</span>
+        </div>
+        <span class="role-badge role-{{ u.role }}">{{ u.role }}</span>
+        <span class="mini-time">{{ u.created_rel }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Hoạt động gần đây</h2>
+  {% if recent_audit.is_empty() %}
+  <div class="panel-empty">Chưa có thao tác nào được ghi nhận</div>
+  {% else %}
+  <ul class="mini-list">
+    {% for a in recent_audit %}
+    <li class="mini-row">
+      <span class="action-badge">{{ a.action_label }}</span>
+      <span class="mini-name">{{ a.actor }}</span>
+      {% if let Some(t) = a.target %}<span class="mini-sub">→ {{ t }}</span>{% endif %}
+      {% if let Some(d) = a.details %}<span class="mini-details">{{ d }}</span>{% endif %}
+      <span class="mini-time">{{ a.rel }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

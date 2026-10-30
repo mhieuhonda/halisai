@@ -1,0 +1,12 @@
+{% extends "admin/layout.html" %}
+{% block title %}Cấu hình{% endblock %}
+{% block nav_settings %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Cấu hình hệ thống</h1>
+  <span class="page-sub">System prompt và thông báo toàn hệ thống</span>
+</div>
+
+{% include "partials/admin_settings.html" %}
+{% endblock %}

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Đăng nhập · HalisAI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-brand">Halis<span class="cursor">▊</span></div>
+      <h1 class="auth-title">Chào mừng trở lại</h1>
+      <p class="auth-sub">Trợ lý AI cá nhân của bạn — nhanh, riêng tư và luôn sẵn sàng.</p>
+      {% if error.is_some() %}
+      <div class="auth-error">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        <span>{% if let Some(e) = error %}{{ e }}{% endif %}</span>
+      </div>
+      {% endif %}
+      <a class="btn-google" href="/auth/google">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.302c-1.648 4.662-6.08 8-11.302 8a12 12 0 1 1 8.477-20.469l5.657-5.656A19.999 19.999 0 1 0 24 44c11.046 0 20-8.954 20-20 0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819A12 12 0 0 1 24 12a11.96 11.96 0 0 1 8.477 3.531l5.657-5.656A19.998 19.998 0 0 0 24 4 19.996 19.996 0 0 0 6.306 14.691z"/><path fill="#4CAF50" d="M24 44a19.997 19.997 0 0 0 13.409-5.186l-6.198-5.249A11.96 11.96 0 0 1 24 36a12 12 0 0 1-11.214-7.757l-6.52 5.025A19.998 19.998 0 0 0 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.302a12.04 12.04 0 0 1-4.09 5.566l.003-.002 6.198 5.249C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+        <span>Đăng nhập bằng Google</span>
+      </a>
+      <p class="auth-foot">Bằng việc tiếp tục, bạn đồng ý với điều khoản sử dụng dịch vụ HalisAI.</p>
+    </div>
+    <div class="auth-pagefoot">HalisAI · được tạo ra bởi Hieu Louis</div>
+  </div>
+</body>
+</html>

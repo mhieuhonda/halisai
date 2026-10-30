@@ -1,0 +1,117 @@
+<div id="users-wrap"
+     hx-get="/partials/admin/users?q={% if !q.is_empty() %}{{ q }}{% endif %}&page={{ page }}"
+     hx-trigger="every 30s"
+     hx-swap="outerHTML">
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Người dùng</th>
+          <th>Quyền</th>
+          <th>Trạng thái</th>
+          <th>Hoạt động cuối</th>
+          <th>Tham gia</th>
+          <th class="th-actions">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if users.is_empty() %}
+        <tr><td colspan="6" class="table-empty">Không tìm thấy người dùng nào</td></tr>
+        {% endif %}
+        {% for u in users %}
+        <tr class="{% if u.banned %}row-banned{% endif %}">
+          <td class="td-user">
+            {% if let Some(pic) = u.picture %}<img class="avatar avatar-sm" src="{{ pic }}" alt="" referrerpolicy="no-referrer">
+            {% else %}<span class="avatar avatar-sm avatar-fallback">{{ u.initial }}</span>{% endif %}
+            <div class="user-cell">
+              <span class="user-cell-name">{{ u.name }}{% if u.is_self %} <span class="self-tag">(bạn)</span>{% endif %}</span>
+              <span class="user-cell-email">{{ u.email }}</span>
+            </div>
+          </td>
+          <td>
+            {% if viewer_role == "admin" && !u.is_self %}
+            <form class="role-form" hx-post="/admin/users/{{ u.id }}/role" hx-target="#users-wrap" hx-swap="outerHTML">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <select name="role" class="role-select role-{{ u.role }}" onchange="this.form.requestSubmit()">
+                <option value="user" {% if u.role == "user" %}selected{% endif %}>user</option>
+                <option value="moderator" {% if u.role == "moderator" %}selected{% endif %}>moderator</option>
+                <option value="admin" {% if u.role == "admin" %}selected{% endif %}>admin</option>
+              </select>
+            </form>
+            {% else %}
+            <span class="role-badge role-{{ u.role }}">{{ u.role }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.banned %}
+            <span class="status-badge status-banned">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+              Bị cấm{% if u.ban_permanent %} vĩnh viễn{% endif %}
+            </span>
+            {% if let Some(bu) = u.ban_until %}{% if !u.ban_permanent %}<span class="ban-until">đến {{ bu }}</span>{% endif %}{% endif %}
+            {% if let Some(br) = u.ban_reason %}<span class="ban-until">lý do: {{ br }}</span>{% endif %}
+            {% else if u.online %}
+            <span class="status-badge status-online"><span class="online-dot"></span>Online</span>
+            {% else %}
+            <span class="status-badge status-offline"><span class="online-dot off"></span>Offline</span>
+            {% endif %}
+          </td>
+          <td class="td-dim">{{ u.last_seen_rel }}</td>
+          <td class="td-dim">{{ u.created_rel }}</td>
+          <td class="td-actions">
+            {% if !u.is_self %}
+            {% if u.banned %}
+            <button class="btn-xs" hx-post="/admin/users/{{ u.id }}/unban" hx-target="#users-wrap" hx-swap="outerHTML"
+              hx-vals='{"q": "{{ q }}", "page": "{{ page }}"}'>Bỏ cấm</button>
+            {% else %}
+            <details class="ban-details">
+              <summary class="btn-xs btn-warn">Cấm…</summary>
+              <form class="ban-form" hx-post="/admin/users/{{ u.id }}/ban" hx-target="#users-wrap" hx-swap="outerHTML">
+                <input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="page" value="{{ page }}">
+                <label>Thời hạn
+                  <select name="duration">
+                    <option value="1h">1 giờ</option>
+                    <option value="24h" selected>24 giờ</option>
+                    <option value="7d">7 ngày</option>
+                    <option value="30d">30 ngày</option>
+                    <option value="forever">Vĩnh viễn</option>
+                  </select>
+                </label>
+                <label>Lý do
+                  <input type="text" name="reason" maxlength="300" placeholder="Không bắt buộc">
+                </label>
+                <button type="submit" class="btn-xs btn-danger">Xác nhận cấm</button>
+              </form>
+            </details>
+            {% endif %}
+            <button class="btn-xs" hx-post="/admin/users/{{ u.id }}/kick" hx-target="#users-wrap" hx-swap="outerHTML"
+              hx-vals='{"q": "{{ q }}", "page": "{{ page }}"}'
+              hx-confirm="Đăng xuất tài khoản này khỏi mọi thiết bị?">Đăng xuất</button>
+            {% if viewer_role == "admin" %}
+            <button class="btn-xs btn-danger" hx-post="/admin/users/{{ u.id }}/delete" hx-target="#users-wrap" hx-swap="outerHTML"
+              hx-vals='{"q": "{{ q }}", "page": "{{ page }}"}'
+              hx-confirm="Xóa vĩnh viễn tài khoản này cùng toàn bộ dữ liệu? Không thể hoàn tác.">Xóa</button>
+            {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-footer">
+    <span class="table-count">Tổng số: {{ total }} người dùng</span>
+    <div class="pager">
+      {% if page > 1 %}
+      <a class="btn-xs" hx-get="/partials/admin/users?q={% if !q.is_empty() %}{{ q }}{% endif %}&page={{ page - 1 }}" hx-target="#users-wrap" hx-swap="outerHTML">← Trước</a>
+      {% endif %}
+      <span class="pager-cur">Trang {{ page }}</span>
+      {% if page * 20 < total %}
+      <a class="btn-xs" hx-get="/partials/admin/users?q={% if !q.is_empty() %}{{ q }}{% endif %}&page={{ page + 1 }}" hx-target="#users-wrap" hx-swap="outerHTML">Sau →</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

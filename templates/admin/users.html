@@ -1,0 +1,21 @@
+{% extends "admin/layout.html" %}
+{% block title %}Người dùng{% endblock %}
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Người dùng</h1>
+  <span class="page-sub">Quản lý tài khoản, quyền hạn và trạng thái</span>
+</div>
+
+<div class="admin-toolbar">
+  <input class="search-input" type="search" name="q" value="{{ q }}" placeholder="Tìm theo tên hoặc email…"
+    hx-get="/partials/admin/users" hx-trigger="input changed delay:400ms, search"
+    hx-target="#users-wrap" hx-swap="outerHTML" autocomplete="off">
+  <span class="toolbar-note">Trạng thái trực tuyến tự cập nhật mỗi 30 giây</span>
+</div>
+
+<div id="users-wrap">
+  {% include "partials/admin_users.html" %}
+</div>
+{% endblock %}

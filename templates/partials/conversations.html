@@ -1,0 +1,18 @@
+{% if convs.is_empty() %}
+<div class="conv-empty">Chưa có cuộc trò chuyện nào</div>
+{% else %}
+<ul class="conv-list">
+{% for c in convs %}
+  <li class="conv-item{% if c.active %} active{% endif %}">
+    <a class="conv-link" href="/chat/{{ c.id }}" @click="drawer = false">
+      <span class="conv-title">{{ c.title }}</span>
+      <span class="conv-time">{{ c.rel }}</span>
+    </a>
+    <button class="icon-btn conv-del" data-conv="{{ c.id }}" title="Xóa cuộc trò chuyện" aria-label="Xóa"
+      hx-post="/api/conversations/{{ c.id }}/delete" hx-confirm="Xóa cuộc trò chuyện này?" hx-swap="none">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+    </button>
+  </li>
+{% endfor %}
+</ul>
+{% endif %}

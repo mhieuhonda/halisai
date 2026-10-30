@@ -1,0 +1,52 @@
+{% extends "admin/layout.html" %}
+{% block title %}Nhật ký{% endblock %}
+{% block nav_audit %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Nhật ký thao tác</h1>
+  <span class="page-sub">Mọi hành động quản trị đều được ghi lại</span>
+</div>
+
+<div id="audit-wrap">
+  <div class="table-scroll">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Thời điểm</th>
+          <th>Người thao tác</th>
+          <th>Hành động</th>
+          <th>Đối tượng</th>
+          <th>Chi tiết</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if entries.is_empty() %}
+        <tr><td colspan="5" class="table-empty">Chưa có bản ghi nào</td></tr>
+        {% endif %}
+        {% for a in entries %}
+        <tr>
+          <td class="td-dim td-time">{{ a.rel }}</td>
+          <td class="td-mono">{{ a.actor }}</td>
+          <td><span class="action-badge">{{ a.action_label }}</span></td>
+          <td class="td-mono">{% if let Some(t) = a.target %}{{ t }}{% else %}—{% endif %}</td>
+          <td class="td-dim td-details">{% if let Some(d) = a.details %}{{ d }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-footer">
+    <span class="table-count">Tổng số: {{ total }} bản ghi</span>
+    <div class="pager">
+      {% if page > 1 %}
+      <a class="btn-xs" href="/admin/audit?page={{ page - 1 }}">← Trước</a>
+      {% endif %}
+      <span class="pager-cur">Trang {{ page }}</span>
+      {% if page * 20 < total %}
+      <a class="btn-xs" href="/admin/audit?page={{ page + 1 }}">Sau →</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

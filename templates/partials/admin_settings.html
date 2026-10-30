@@ -1,0 +1,29 @@
+<div id="settings-wrap">
+  {% if saved %}
+  <div class="save-toast">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    Đã lưu thay đổi
+  </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2 class="panel-title">Thông báo toàn hệ thống</h2>
+    <p class="panel-desc">Hiển thị dạng banner cho tất cả người dùng ở đầu giao diện chat. Để trống nếu không muốn hiển thị.</p>
+    <form hx-post="/admin/settings" hx-target="#settings-wrap" hx-swap="outerHTML" class="settings-form">
+      <label class="field">
+        <span class="field-label">Nội dung thông báo</span>
+        <textarea name="announcement" rows="3" maxlength="500" placeholder="Ví dụ: HalisAI sẽ bảo trì vào 22:00 tối nay.">{{ announcement }}</textarea>
+      </label>
+
+      <h2 class="panel-title mt">System prompt</h2>
+      <p class="panel-desc">Danh tính và nguyên tắc ứng xử của Halis. Thời gian hiện tại được tự động bổ sung vào cuối prompt khi trò chuyện.</p>
+      <label class="field">
+        <span class="field-label">Nội dung system prompt</span>
+        <textarea name="system_prompt" rows="14" class="mono-textarea">{{ system_prompt }}</textarea>
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Lưu cấu hình</button>
+      </div>
+    </form>
+  </section>
+</div>
