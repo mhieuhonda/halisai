@@ -12,7 +12,8 @@ use crate::db::{self, misc, user::User};
 use crate::error::{error_page, AppError, AppResult};
 use crate::routes::{build_ctx, Ctx};
 use crate::state::AppState;
-use crate::util::{format_full, relative_time, truncate_chars};
+use crate::i18n;
+use crate::util::truncate_chars;
 
 const PAGE_SIZE: i64 = 20;
 
@@ -101,7 +102,7 @@ pub struct UserRow {
 
 impl UserRow {
     fn from_user(u: User, now: OffsetDateTime) -> Self {
-        let ban_until = u.banned_until.map(format_full);
+        let ban_until = u.banned_until.map(i18n::format_full_vi);
         let initial = u.name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "?".into());
         let online = u.is_online(now);
         let banned = u.is_banned(now);
@@ -117,8 +118,8 @@ impl UserRow {
             ban_permanent: u.ban_permanent,
             ban_until,
             ban_reason: u.ban_reason,
-            created_rel: relative_time(u.created_at, now),
-            last_seen_rel: relative_time(u.last_seen, now),
+            created_rel: i18n::relative_time(u.created_at, now, "vi"),
+            last_seen_rel: i18n::relative_time(u.last_seen, now, "vi"),
             is_self: false,
         }
     }
@@ -157,7 +158,7 @@ impl From<misc::AuditEntry> for AuditRow {
             action_label: label_action(&e.action),
             target: e.target,
             details,
-            rel: relative_time(e.created_at, now),
+            rel: i18n::relative_time(e.created_at, now, "vi"),
         }
     }
 }

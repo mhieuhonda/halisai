@@ -14,6 +14,8 @@ pub struct User {
     pub banned_until: Option<OffsetDateTime>,
     pub ban_permanent: bool,
     pub ban_reason: Option<String>,
+    pub lang: String,
+    pub theme: String,
     pub created_at: OffsetDateTime,
     pub last_seen: OffsetDateTime,
 }
@@ -55,7 +57,7 @@ pub async fn upsert_google_user(
         "INSERT INTO users (google_sub, email, name, picture)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (google_sub) DO UPDATE SET email = $2, name = $3, picture = $4
-         RETURNING id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, created_at, last_seen",
+         RETURNING id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, lang, theme, created_at, last_seen",
     )
     .bind(google_sub)
     .bind(email)
@@ -67,7 +69,7 @@ pub async fn upsert_google_user(
 
 pub async fn get_user(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<User>> {
     query_as(
-        "SELECT id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, created_at, last_seen
+        "SELECT id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, lang, theme, created_at, last_seen
          FROM users WHERE id = $1",
     )
         .bind(id)
@@ -85,7 +87,7 @@ pub async fn count_users(pool: &PgPool) -> sqlx::Result<i64> {
 pub async fn list_users(pool: &PgPool, q: &str, limit: i64, offset: i64) -> sqlx::Result<Vec<User>> {
     let pattern = format!("%{}%", q.trim().to_lowercase());
     query_as(
-        "SELECT id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, created_at, last_seen
+        "SELECT id, google_sub, email, name, picture, role, banned_until, ban_permanent, ban_reason, lang, theme, created_at, last_seen
          FROM users
          WHERE $1 = '%%' OR lower(name) LIKE $1 OR lower(email) LIKE $1
          ORDER BY last_seen DESC
@@ -102,6 +104,17 @@ pub async fn set_role(pool: &PgPool, id: Uuid, role: &str) -> sqlx::Result<()> {
     query("UPDATE users SET role = $2 WHERE id = $1")
         .bind(id)
         .bind(role)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Lưu tùy chỉnh ngôn ngữ / chủ đề của người dùng.
+pub async fn set_prefs(pool: &PgPool, id: Uuid, lang: &str, theme: &str) -> sqlx::Result<()> {
+    query("UPDATE users SET lang = $2, theme = $3 WHERE id = $1")
+        .bind(id)
+        .bind(lang)
+        .bind(theme)
         .execute(pool)
         .await?;
     Ok(())
@@ -163,6 +176,8 @@ mod tests {
             banned_until: None,
             ban_permanent: false,
             ban_reason: None,
+            lang: "vi".into(),
+            theme: "light".into(),
             created_at: now,
             last_seen: now,
         };

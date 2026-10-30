@@ -1,0 +1,99 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ ctx.t.settings_title }} · HalisAI{% endblock %}
+
+{% block content %}
+<div class="settings-page">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" @click="drawer = true" aria-label="{{ ctx.t.open_menu }}">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="topbar-title">{{ ctx.t.settings_title }}</div>
+    <div class="topbar-actions">
+      <a class="btn-ghost" href="/">{{ ctx.t.back_to_chat }}</a>
+    </div>
+  </header>
+
+  <div class="settings-body">
+    <div class="settings-col">
+
+      <section class="panel">
+        <h2 class="panel-title">{{ ctx.t.usage }}</h2>
+        <p class="panel-desc">{{ ctx.t.usage_note }}</p>
+        <div class="usage-card" id="usage-card"
+             data-used="{{ ctx.usage.used }}" data-limit="{{ ctx.usage.limit }}"
+             data-percent="{{ ctx.usage.percent() }}" data-blocked="{{ ctx.usage.blocked }}"
+             data-resets="{{ ctx.usage.resets_at_rfc3339() }}">
+          <div class="usage-head">
+            <span class="usage-plan">{{ ctx.t.usage_window }}</span>
+            <span class="usage-quota">200 {{ ctx.t.usage_per_hour }}</span>
+          </div>
+          <div class="usage-segments usage-segments-lg" aria-hidden="true">
+            <span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span>
+          </div>
+          <div class="usage-row">
+            <span class="usage-count"><b></b> {{ ctx.t.usage_used }}</span>
+            <span class="usage-pct"></span>
+          </div>
+          <div class="usage-note" data-role="note"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">{{ ctx.t.appearance }}</h2>
+        <p class="panel-desc">{{ ctx.t.theme_sub }}</p>
+        <div class="theme-picker" id="theme-picker" data-current="{{ ctx.theme }}">
+          <button type="button" class="theme-option light" data-theme="light" aria-pressed="{{ ctx.theme == "light" }}">
+            <span class="theme-preview light-preview" aria-hidden="true">
+              <span class="tp-side"></span><span class="tp-main"><span class="tp-bar"></span><span class="tp-block"></span></span>
+            </span>
+            <span class="theme-name">{{ ctx.t.theme_light }}</span>
+            <svg class="theme-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+          <button type="button" class="theme-option dark" data-theme="dark" aria-pressed="{{ ctx.theme == "dark" }}">
+            <span class="theme-preview dark-preview" aria-hidden="true">
+              <span class="tp-side"></span><span class="tp-main"><span class="tp-bar"></span><span class="tp-block"></span></span>
+            </span>
+            <span class="theme-name">{{ ctx.t.theme_dark }}</span>
+            <svg class="theme-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">{{ ctx.t.language }}</h2>
+        <p class="panel-desc">{{ ctx.t.language_sub }}</p>
+        <div class="lang-picker" id="lang-picker" data-current="{{ ctx.lang }}">
+          <button type="button" class="lang-option" data-lang="vi" aria-pressed="{{ ctx.lang == "vi" }}">
+            <span class="lang-flag" aria-hidden="true">🇻🇳</span>
+            <span class="lang-name">{{ ctx.t.lang_vi }}</span>
+            <svg class="theme-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+          <button type="button" class="lang-option" data-lang="en" aria-pressed="{{ ctx.lang == "en" }}">
+            <span class="lang-flag" aria-hidden="true">🇬🇧</span>
+            <span class="lang-name">{{ ctx.t.lang_en }}</span>
+            <svg class="theme-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">{{ ctx.t.account }}</h2>
+        <div class="account-row">
+          {% if let Some(pic) = ctx.user_picture %}
+          <img class="avatar" src="{{ pic }}" alt="" referrerpolicy="no-referrer">
+          {% else %}
+          <span class="avatar avatar-fallback">{{ ctx.user_initial }}</span>
+          {% endif %}
+          <div class="account-meta">
+            <span class="account-name">{{ ctx.user_name }}</span>
+            <span class="account-mail">{{ ctx.user_email }}</span>
+          </div>
+          <span class="role-badge role-{{ ctx.user_role }}">{{ ctx.user_role }}</span>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

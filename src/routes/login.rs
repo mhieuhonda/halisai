@@ -212,7 +212,7 @@ pub async fn banned_page(State(state): State<AppState>, jar: CookieJar) -> Respo
     }
     let until = user
         .banned_until
-        .map(crate::util::format_full);
+        .map(crate::i18n::format_full_vi);
     Html(
         BannedPage {
             reason: user.ban_reason.clone(),

@@ -50,7 +50,7 @@ pub async fn session_user(pool: &PgPool, token_hash: &str) -> sqlx::Result<Optio
     let Some(s) = s else { return Ok(None) };
     let u: Option<User> = query_as(
         "SELECT id, google_sub, email, name, picture, role, banned_until,
-                ban_permanent, ban_reason, created_at, last_seen
+                ban_permanent, ban_reason, lang, theme, created_at, last_seen
          FROM users WHERE id = $1",
     )
     .bind(s.user_id)

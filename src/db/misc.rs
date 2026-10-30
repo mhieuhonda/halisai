@@ -87,7 +87,7 @@ pub async fn count_online_users(pool: &PgPool) -> sqlx::Result<i64> {
 pub async fn recent_users(pool: &PgPool, limit: i64) -> sqlx::Result<Vec<User>> {
     query_as(
         "SELECT id, google_sub, email, name, picture, role, banned_until, ban_permanent,
-                ban_reason, created_at, last_seen
+                ban_reason, lang, theme, created_at, last_seen
          FROM users ORDER BY created_at DESC LIMIT $1",
     )
     .bind(limit)
