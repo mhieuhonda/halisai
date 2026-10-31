@@ -11,6 +11,9 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  COOLIFY: https://coolify.buppou.com
+  SERVER_UUID: tmz98i9dob6oknig10yen6mr
+  DB_UUID: 3oaacorrqezfzycu1rwoiog1
 
 jobs:
   publish:
@@ -43,6 +46,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Ensure database is running
+        if: env.COOLIFY_APP_UUID != ''
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          REACHABLE=$(curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY/api/v1/servers/$SERVER_UUID" | jq -r '.settings.is_reachable // false')
+          if [ "$REACHABLE" != "true" ]; then
+            echo "server unreachable, skipping db warm-up"
+            exit 0
+          fi
+          for i in $(seq 1 12); do
+            ST=$(curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              "$COOLIFY/api/v1/databases/$DB_UUID" | jq -r '.status // empty')
+            echo "db status: $ST"
+            case "$ST" in running*) exit 0 ;; esac
+            curl -fsS -X POST -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              "$COOLIFY/api/v1/databases/$DB_UUID/start" >/dev/null || true
+            sleep 10
+          done
+          echo "db not running yet, continuing anyway"
+
       - name: Trigger Coolify deploy
         if: env.COOLIFY_APP_UUID != ''
         env:
@@ -50,6 +75,7 @@ jobs:
         run: |
           echo "Notifying Coolify..."
           curl -fsS -X POST \
-            "https://coolify.buppou.com/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" \
+            "$COOLIFY/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" \
             -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
             --retry 5 --retry-delay 10 --retry-all-errors
+          echo
