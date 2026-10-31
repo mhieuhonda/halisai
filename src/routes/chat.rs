@@ -249,11 +249,7 @@ fn usage_denied(snap: usage::Snapshot, t: &crate::i18n::Strings) -> Response {
             format!("{} {}", t.resets_at, crate::i18n::clock_time(local, t.lang))
         })
         .unwrap_or_default();
-    let message = if t.lang == "en" {
-        format!("{} · {}", t.limit_reached, resets)
-    } else {
-        format!("{} · {}", t.limit_reached, resets)
-    };
+    let message = format!("{} · {}", t.limit_reached, resets);
     (
         StatusCode::TOO_MANY_REQUESTS,
         axum::Json(json!({

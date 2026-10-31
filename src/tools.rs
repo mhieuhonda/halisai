@@ -612,14 +612,15 @@ fn parse_ddg_results(html: &str) -> Vec<SearchHit> {
             let (text, after) = collect_text_until(html, tag_end + 1, "a");
             if is_link {
                 if let Some(url) = resolve_ddg_href(&href) {
-                    if !url.contains("duckduckgo.com/y.js") && !url.contains("duckduckgo.com/ad") {
-                        if hits.len() < SEARCH_MAX_RESULTS {
-                            hits.push(SearchHit {
-                                title: crate::util::truncate_chars(&text, 160),
-                                url,
-                                snippet: String::new(),
-                            });
-                        }
+                    if !url.contains("duckduckgo.com/y.js")
+                        && !url.contains("duckduckgo.com/ad")
+                        && hits.len() < SEARCH_MAX_RESULTS
+                    {
+                        hits.push(SearchHit {
+                            title: crate::util::truncate_chars(&text, 160),
+                            url,
+                            snippet: String::new(),
+                        });
                     }
                 }
             } else if let Some(last) = hits.last_mut() {
@@ -744,7 +745,7 @@ fn format_thousands(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -1040,11 +1041,9 @@ impl Converter {
             "tr" => {
                 self.flush_row();
             }
-            "td" | "th" => {
-                if self.cell.is_none() {
-                    self.cell = Some(String::new());
-                    self.cell_is_header = name == "th";
-                }
+            "td" | "th" if self.cell.is_none() => {
+                self.cell = Some(String::new());
+                self.cell_is_header = name == "th";
             }
             _ => {}
         }

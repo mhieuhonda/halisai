@@ -144,8 +144,7 @@ impl DeltaFilter {
 fn parse_block(name: &str, body: &str, counter: &mut usize) -> Option<ToolCall> {
     let mut args = serde_json::Map::new();
     let mut rest = body;
-    loop {
-        let Some(p) = rest.find("<parameter=") else { break };
+    while let Some(p) = rest.find("<parameter=") {
         let after = &rest[p + 11..];
         let Some(g) = after.find('>') else { break };
         let key = &after[..g];
@@ -243,7 +242,7 @@ struct StepResult {
 }
 
 #[derive(Debug, Clone)]
-struct ToolCall {
+pub(crate) struct ToolCall {
     id: String,
     name: String,
     arguments: String,
@@ -408,10 +407,8 @@ async fn stream_step(
     let _ = seen_done;
     // Phần văn bản còn kẹt trong bộ lọc và các lệnh gọi tool dạng văn bản
     let tail = filter.finish();
-    if !tail.is_empty() && !client_gone {
-        if tx.send(AgentEvent::Delta(tail.clone())).await.is_ok() {
-            step.content.push_str(&tail);
-        }
+    if !tail.is_empty() && !client_gone && tx.send(AgentEvent::Delta(tail.clone())).await.is_ok() {
+        step.content.push_str(&tail);
     }
     let text_blocks = filter.take_blocks();
     if !text_blocks.is_empty() {
